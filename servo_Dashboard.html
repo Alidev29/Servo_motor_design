@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Servo Joint Control</title>
+<style>
+:root{
+  --bg:#f3f5f9; --card:#ffffff; --ink:#1a2330; --muted:#657285; --line:#e1e6ee; --grid:#e8ecf2;
+  --accent:#2f6fed; --accent-ink:#ffffff; --target:#e07b00; --speed:#0c9a86; --pwm:#8a5cf0;
+  --bad:#d23c3c; --good:#1c9a55; --arm:#2a3a55; --soft:#eef2f8;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0e131a; --card:#161d27; --ink:#e6ebf2; --muted:#8c99ab; --line:#263140; --grid:#212b39;
+    --accent:#6b9eff; --accent-ink:#0b1220; --target:#f4a43c; --speed:#38cdb8; --pwm:#ab8cff;
+    --bad:#ff7474; --good:#4fcb8b; --arm:#cdd8ea; --soft:#1d2633;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0;font-weight:650}
+h2{font-size:13px;margin:0 0 10px;font-weight:650;letter-spacing:.02em;text-transform:uppercase;color:var(--muted)}
+p{margin:0}
+.top{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:14px}
+.title p{color:var(--muted);font-size:12.5px;margin-top:2px}
+.topright{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--soft);color:var(--muted);font-size:12.5px;font-weight:600}
+.pill::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.pill.on{color:var(--good)} .pill.on::before{background:var(--good)}
+.pill.warn{color:var(--target)} .pill.warn::before{background:var(--target)}
+.pill.demo{color:var(--pwm)} .pill.demo::before{background:var(--pwm)}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 14px;border-radius:9px;font-weight:600}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.big{width:100%;padding:14px;font-size:16px;background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.danger{color:var(--bad)}
+button.small{padding:5px 10px;font-size:12.5px}
+input[type=number],input[type=text],select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 9px;min-width:0}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.alert{display:flex;gap:10px;justify-content:space-between;align-items:flex-start;background:color-mix(in srgb,var(--bad) 13%,var(--card));border:1px solid var(--bad);color:var(--ink);padding:10px 12px;border-radius:10px;margin-bottom:14px}
+.alert[hidden]{display:none}
+.alert.info{background:color-mix(in srgb,var(--accent) 12%,var(--card));border-color:var(--accent)}
+.alert button{padding:0 8px;border:none;background:none;font-size:18px;line-height:1}
+.grid{display:grid;grid-template-columns:320px 1fr;gap:14px;align-items:start}
+.col{display:flex;flex-direction:column;gap:14px;min-width:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+.presets{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
+.row{display:flex;gap:8px;align-items:center}
+.row>input[type=number]{flex:1}
+.stack{display:flex;flex-direction:column;gap:10px}
+.hint{color:var(--muted);font-size:12px}
+.tune{display:grid;grid-template-columns:64px 1fr auto;gap:6px 8px;align-items:center}
+.tune label{color:var(--muted);font-size:12.5px}
+details summary{cursor:pointer;font-weight:650;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.02em}
+details[open] summary{margin-bottom:10px}
+#log{height:150px;overflow:auto;background:var(--soft);border-radius:8px;padding:8px;font:12px/1.5 ui-monospace,Consolas,monospace;margin:8px 0 0;white-space:pre-wrap}
+#log .tx{color:var(--accent)} #log .err{color:var(--bad)} #log .ok{color:var(--good)}
+.armcard{display:grid;grid-template-columns:minmax(260px,430px) 1fr;gap:14px;align-items:center}
+#arm{width:100%;height:auto;display:block}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.tile{background:var(--soft);border-radius:10px;padding:10px 12px}
+.tile span{display:block;color:var(--muted);font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.tile b{font-size:21px;font-variant-numeric:tabular-nums;font-weight:650}
+.tile small{color:var(--muted);font-size:12px;font-weight:500}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.toolbar label{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:12.5px}
+.spacer{flex:1}
+canvas{width:100%;display:block}
+#c1{height:300px} #c2{height:210px}
+.chead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px}
+.chead h2{margin:0}
+.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:12px}
+.stat{background:var(--soft);border-radius:10px;padding:9px 11px}
+.stat span{display:block;color:var(--muted);font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.stat b{font-size:17px;font-variant-numeric:tabular-nums;font-weight:650}
+.stat em{font-style:normal;font-size:12px;font-weight:700}
+.stat em.ok{color:var(--good)} .stat em.bad{color:var(--bad)}
+.band{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px;margin-top:10px}
+.band input{width:70px}
+@media (max-width:980px){
+  .grid{grid-template-columns:1fr}
+  .armcard{grid-template-columns:1fr}
+  .steps{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:520px){
+  .wrap{padding:12px}
+  .tiles{grid-template-columns:repeat(2,1fr)}
+  #c1{height:250px} #c2{height:190px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <div class="title">
+    <h1>Servo Joint Control</h1>
+    <p>MTR5101 &middot; NUCLEO-G474RE &middot; position control 0&ndash;180&deg;</p>
+  </div>
+  <div class="topright">
+    <span id="pillConn" class="pill">Disconnected</span>
+    <span id="pillHome" class="pill">Not homed</span>
+    <button id="btnConnect" class="primary">Connect</button>
+    <button id="btnDemo">Demo</button>
+  </div>
+</header>
+
+<div id="alert" class="alert" role="alert" hidden>
+  <span id="alertText"></span>
+  <button id="alertClose" aria-label="Dismiss">&times;</button>
+</div>
+
+<div class="grid">
+  <aside class="col">
+    <section class="card">
+      <h2>Control</h2>
+      <button id="btnHome" class="big" disabled>Home</button>
+      <div class="presets" id="presets"></div>
+      <div class="stack">
+        <input id="slider" type="range" min="0" max="180" step="1" value="90" aria-label="Target angle" disabled>
+        <div class="row">
+          <input id="angleIn" type="number" min="0" max="180" step="0.5" value="90" aria-label="Angle in degrees" disabled>
+          <button id="btnGo" disabled>Go</button>
+          <button id="btnHold" class="danger" disabled>Hold</button>
+        </div>
+        <p class="hint">Hold = stop at the current angle. Angles are enabled after homing.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <details>
+        <summary>Tuning</summary>
+        <div class="tune" id="tune"></div>
+        <div class="row" style="margin-top:10px">
+          <button id="btnRead" class="small" disabled>Read settings</button>
+          <button id="btnBk" class="small" disabled>Breakaway test</button>
+        </div>
+        <p class="hint" style="margin-top:8px">Breakaway test: put the arm between 30&deg; and 150&deg; first.</p>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>Console</h2>
+      <div class="row">
+        <input id="rawIn" type="text" placeholder="command, e.g. 90 or kp 2.5" style="flex:1" disabled>
+        <button id="btnSend" class="small" disabled>Send</button>
+      </div>
+      <pre id="log" aria-live="polite"></pre>
+    </section>
+  </aside>
+
+  <div class="col">
+    <section class="card armcard">
+      <svg id="arm" viewBox="0 36 420 232" role="img" aria-label="Arm position"></svg>
+      <div class="tiles">
+        <div class="tile"><span>Angle</span><b id="mAngle">&ndash;</b> <small>&deg;</small></div>
+        <div class="tile"><span>Target</span><b id="mTarget">&ndash;</b> <small>&deg;</small></div>
+        <div class="tile"><span>Error</span><b id="mErr">&ndash;</b> <small>&deg;</small></div>
+        <div class="tile"><span>Arm speed</span><b id="mSpeed">&ndash;</b> <small>&deg;/s</small></div>
+        <div class="tile"><span>Motor speed</span><b id="mRpm">&ndash;</b> <small>rpm</small></div>
+        <div class="tile"><span>PWM</span><b id="mPwm">&ndash;</b> <small>%</small></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="toolbar">
+        <label>Window
+          <select id="win"><option value="10">10 s</option><option value="30" selected>30 s</option><option value="60">60 s</option><option value="all">All</option></select>
+        </label>
+        <label><input type="checkbox" id="auto" checked> Auto-scale</label>
+        <span class="spacer"></span>
+        <button id="btnPause" class="small">Pause</button>
+        <button id="btnClear" class="small">Clear</button>
+        <button id="btnCsv" class="small">Export CSV</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="chead"><h2>Angle and target</h2><span class="hint" id="stepTitle">no step yet</span></div>
+      <canvas id="c1" aria-label="Angle versus time"></canvas>
+      <div class="steps">
+        <div class="stat"><span>Overshoot</span><b id="sOs">&ndash;</b> <em id="sOsOk"></em></div>
+        <div class="stat"><span>Rise time 10&ndash;90%</span><b id="sRise">&ndash;</b></div>
+        <div class="stat"><span>Settling time</span><b id="sSet">&ndash;</b> <em id="sSetOk"></em></div>
+        <div class="stat"><span>Peak at</span><b id="sPeak">&ndash;</b></div>
+        <div class="stat"><span>Final error</span><b id="sFinal">&ndash;</b></div>
+      </div>
+      <div class="band">Settling band &plusmn;<input type="number" id="band" value="2" min="0.1" step="0.1">&deg;
+        <span>&middot; limits from the brief: overshoot &le; 30%, settling &le; 6 s</span></div>
+    </section>
+
+    <section class="card">
+      <div class="chead"><h2>Motor speed and PWM</h2><span class="hint">motor shaft = arm speed &times; 20 (gearbox 20:1)</span></div>
+      <canvas id="c2" aria-label="Speed and PWM versus time"></canvas>
+    </section>
+  </div>
+</div>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const DT = 0.1;            // firmware prints every 100 ms
+const GEAR = 20;           // gearbox ratio (motor turns per arm turn)
+const MAX_SAMPLES = 20000;
+const PRESETS = [0, 30, 45, 60, 90, 120, 135, 150, 180];
+const TUNE = [['kp','kp'],['ki','ki'],['kd','kd'],['minup','min up'],['mindn','min dn'],['ratio','ratio']];
+
+const S = { connected:false, demo:false, homed:false, samples:[], n:0, paused:false, pauseT:0, hoverT:null, dirty:true };
+let port = null, writer = null, reader = null, readClosed = null;
+let step = null, lastTarget = null, armDisp = null;
+
+/* ---------------------------------------------------------------- UI helpers */
+function showAlert(text, kind){
+  $('alertText').textContent = text;
+  $('alert').className = 'alert' + (kind === 'info' ? ' info' : '');
+  $('alert').hidden = false;
+}
+$('alertClose').onclick = () => { $('alert').hidden = true; };
+
+function logLine(text, cls){
+  const log = $('log');
+  const d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.textContent = text;
+  log.appendChild(d);
+  while (log.childNodes.length > 200) log.removeChild(log.firstChild);
+  log.scrollTop = log.scrollHeight;
+}
+
+function refreshUi(){
+  const on = S.connected || S.demo;
+  const pc = $('pillConn');
+  pc.textContent = S.demo ? 'Demo mode' : (S.connected ? 'Connected' : 'Disconnected');
+  pc.className = 'pill' + (S.demo ? ' demo' : (S.connected ? ' on' : ''));
+  const ph = $('pillHome');
+  ph.textContent = S.homing ? 'Homing...' : (S.homed ? 'Homed' : 'Not homed');
+  ph.className = 'pill' + (S.homed ? ' on' : (on ? ' warn' : ''));
+  $('btnConnect').textContent = S.connected ? 'Disconnect' : 'Connect';
+  $('btnDemo').textContent = S.demo ? 'Stop demo' : 'Demo';
+  $('btnConnect').disabled = S.demo;
+  $('btnDemo').disabled = S.connected;
+  for (const id of ['btnHome','btnHold','btnRead','btnBk','rawIn','btnSend']) $(id).disabled = !on;
+  const ang = on && S.homed;
+  for (const id of ['slider','angleIn','btnGo']) $(id).disabled = !ang;
+  document.querySelectorAll('.preset').forEach(b => b.disabled = !ang);
+  document.querySelectorAll('.tuneSet').forEach(b => b.disabled = !on);
+}
+
+/* ---------------------------------------------------------------- serial */
+async function connect(){
+  if (!('serial' in navigator)){
+    showAlert('Web Serial is not supported in this browser. Open this file in Chrome or Edge.');
+    return;
+  }
+  try{
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+  }catch(e){
+    if (e && e.name === 'NotFoundError') return;   // user closed the picker
+    showAlert('Could not open the port: ' + (e.message || e) + '. Close the Arduino Serial Monitor first.');
+    port = null; return;
+  }
+  writer = port.writable.getWriter();
+  S.connected = true; S.homed = false; S.homing = false;
+  $('alert').hidden = true;
+  logLine('connected', 'ok');
+  refreshUi();
+  readLoop();
+  setTimeout(() => send('?'), 800);       // ask the board for its settings
+}
+
+async function readLoop(){
+  const decoder = new TextDecoderStream();
+  readClosed = port.readable.pipeTo(decoder.writable).catch(() => {});
+  reader = decoder.readable.getReader();
+  let buf = '';
+  try{
+    while (true){
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0){ handleLine(buf.slice(0, i)); buf = buf.slice(i + 1); }
+    }
+  }catch(e){ /* port lost */ }
+  await cleanup();
+}
+
+async function cleanup(){
+  try{ if (reader) { await reader.cancel().catch(()=>{}); reader.releaseLock(); } }catch(e){}
+  try{ if (readClosed) await readClosed; }catch(e){}
+  try{ if (writer) writer.releaseLock(); }catch(e){}
+  try{ if (port) await port.close(); }catch(e){}
+  reader = writer = port = readClosed = null;
+  if (S.connected){ S.connected = false; S.homed = false; S.homing = false; logLine('disconnected'); refreshUi(); }
+}
+
+async function disconnect(){
+  if (reader) { try{ await reader.cancel(); }catch(e){} }
+  else await cleanup();
+}
+
+async function send(cmd){
+  cmd = String(cmd).trim();
+  if (!cmd) return;
+  logLine('> ' + cmd, 'tx');
+  if (S.demo){ demo.command(cmd); return; }
+  if (!writer){ showAlert('Not connected.'); return; }
+  try{ await writer.write(new TextEncoder().encode(cmd + '\n')); }
+  catch(e){ showAlert('Write failed: ' + (e.message || e)); }
+}
+
+if ('serial' in navigator){
+  navigator.serial.addEventListener('disconnect', () => { if (S.connected) disconnect(); });
+}
+
+/* ---------------------------------------------------------------- parsing */
+function handleLine(raw){
+  const line = raw.replace(/\r/g, '').trim();
+  if (!line) return;
+
+  if (line.startsWith('angle:')){
+    const kv = {};
+    line.split(',').forEach(p => { const i = p.indexOf(':'); if (i > 0) kv[p.slice(0, i).trim()] = parseFloat(p.slice(i + 1)); });
+    if (isFinite(kv.angle) && isFinite(kv.target)){
+      if (!S.homed || S.homing){ S.homed = true; S.homing = false; refreshUi(); }
+      addSample(kv);
+    }
+    return;
+  }
+  if (line.startsWith('not homed')){
+    if (S.homed){ S.homed = false; refreshUi(); }
+    return;                                  // printed every second, keep it out of the log
+  }
+  if (line.startsWith('!!')){
+    showAlert(line.replace(/^!!\s*/, ''));
+    logLine(line, 'err');
+    if (/timeout|cannot leave/i.test(line)){ S.homing = false; refreshUi(); }
+    return;
+  }
+  logLine(line, /^homed/.test(line) ? 'ok' : '');
+  if (/^homing/.test(line)){ S.homed = false; S.homing = true; refreshUi(); }
+  else if (/^homed/.test(line)){ S.homed = true; S.homing = false; refreshUi(); }
+
+  // settings: "kp 2.00 | ki 3.00 | ..."  or echo "kp = 2.000"
+  if (/^kp\s/.test(line)){
+    for (const m of line.matchAll(/([a-z]+)\s+(-?[\d.]+)/g)) setTune(m[1], m[2]);
+  } else {
+    const m = line.match(/^([a-z]+)\s*=\s*(-?[\d.]+)$/);
+    if (m) setTune(m[1], m[2]);
+  }
+}
+function setTune(key, val){
+  const el = $('t_' + key);
+  if (el && document.activeElement !== el) el.value = parseFloat(val);
+}
+
+/* ---------------------------------------------------------------- samples and step response */
+function band(){ const v = parseFloat($('band').value); return isFinite(v) && v > 0 ? v : 2; }
+
+function addSample(k){
+  const sm = S.samples;
+  const t = S.n * DT; S.n++;
+  const s = { t, angle:k.angle, target:k.target,
+              err: isFinite(k.err) ? k.err : k.target - k.angle,
+              pwm: isFinite(k.pwm) ? k.pwm : 0, boost: isFinite(k.boost) ? k.boost : 0, speed: 0 };
+  const p1 = sm[sm.length - 1], p2 = sm[sm.length - 2];
+  if (p2) s.speed = (s.angle - p2.angle) / (2 * DT);
+  else if (p1) s.speed = (s.angle - p1.angle) / DT;
+  updateStep(s, p1);
+  sm.push(s);
+  if (sm.length > MAX_SAMPLES) sm.splice(0, 2000);
+  if (armDisp === null) armDisp = s.angle;
+  updateMetrics(s);
+  updateStepPanel();
+  S.dirty = true;
+}
+
+function updateStep(s, prev){
+  if (lastTarget === null || Math.abs(s.target - lastTarget) > 0.01){
+    const a0 = prev ? prev.angle : s.angle;
+    step = Math.abs(s.target - a0) >= 3
+      ? { t0:s.t, a0, T:s.target, dir:Math.sign(s.target - a0), peakEx:0, peakT:s.t, peakA:s.angle, t10:null, t90:null, lastOut:s.t, cur:s }
+      : null;
+    lastTarget = s.target;
+  }
+  if (!step) return;
+  const span = Math.abs(step.T - step.a0);
+  const ex = (s.angle - step.T) * step.dir;
+  if (ex > step.peakEx){ step.peakEx = ex; step.peakT = s.t; step.peakA = s.angle; }
+  const p = (s.angle - step.a0) * step.dir / span;
+  if (step.t10 === null && p >= 0.1) step.t10 = s.t;
+  if (step.t90 === null && p >= 0.9) step.t90 = s.t;
+  if (Math.abs(s.angle - step.T) > band()) step.lastOut = s.t;
+  step.cur = s;
+}
+
+const f1 = v => (Math.round(v * 10) / 10).toFixed(1);
+function updateMetrics(s){
+  $('mAngle').textContent = f1(s.angle);
+  $('mTarget').textContent = f1(s.target);
+  $('mErr').textContent = f1(s.target - s.angle);
+  $('mSpeed').textContent = f1(s.speed);
+  $('mRpm').textContent = f1(Math.abs(s.speed) * GEAR / 6);
+  $('mPwm').textContent = f1(s.pwm);
+}
+
+function updateStepPanel(){
+  const set = (id, txt) => { $(id).textContent = txt; };
+  const tag = (id, ok) => { const e = $(id); e.textContent = ok === null ? '' : (ok ? 'OK' : 'over limit'); e.className = ok === null ? '' : (ok ? 'ok' : 'bad'); };
+  if (!step){
+    $('stepTitle').textContent = 'no step yet (change the target by 3° or more)';
+    ['sOs','sRise','sSet','sPeak','sFinal'].forEach(i => set(i, '–'));
+    tag('sOsOk', null); tag('sSetOk', null);
+    return;
+  }
+  const span = Math.abs(step.T - step.a0);
+  $('stepTitle').textContent = 'step ' + f1(step.a0) + '° → ' + f1(step.T) + '°';
+  const pct = step.peakEx / span * 100;
+  set('sOs', step.peakEx > 0.05 ? '+' + f1(step.peakEx) + '° (' + f1(pct) + '%)' : '0%');
+  tag('sOsOk', pct <= 30);
+  set('sRise', step.t10 !== null && step.t90 !== null ? (step.t90 - step.t10).toFixed(1) + ' s' : '–');
+  const cur = step.cur, inBand = Math.abs(cur.angle - step.T) <= band();
+  if (inBand){ const st = step.lastOut - step.t0; set('sSet', st.toFixed(1) + ' s'); tag('sSetOk', st <= 6); }
+  else { set('sSet', '…'); tag('sSetOk', null); }
+  set('sPeak', step.peakEx > 0.05 ? (step.peakT - step.t0).toFixed(1) + ' s' : '–');
+  const age = cur.t - step.t0;
+  if (age >= 1.5){
+    const sm = S.samples; let sum = 0, c = 0;
+    for (let i = sm.length - 1; i >= 0 && c < 10; i--, c++) sum += sm[i].target - sm[i].angle;
+    set('sFinal', c ? (sum / c >= 0 ? '+' : '') + (sum / c).toFixed(2) + '°' : '–');
+  } else set('sFinal', '…');
+}
+
+/* ---------------------------------------------------------------- arm view */
+const CX = 210, CY = 220, R = 150;
+const SVGNS = 'http://www.w3.org/2000/svg';
+function el(name, attrs, parent){
+  const e = document.createElementNS(SVGNS, name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+const pt = (deg, r) => [CX + r * Math.cos(deg * Math.PI / 180), CY - r * Math.sin(deg * Math.PI / 180)];
+let armEls = {};
+function buildArm(){
+  const svg = $('arm');
+  el('path', { d:'M 360 220 A 150 150 0 0 0 60 220', fill:'none', stroke:'var(--line)', 'stroke-width':14, 'stroke-linecap':'round' }, svg);
+  for (let d = 0; d <= 180; d += 30){
+    const [x1, y1] = pt(d, R - 14), [x2, y2] = pt(d, R + 3), [tx, ty] = pt(d, R + 22);
+    el('line', { x1, y1, x2, y2, stroke:'var(--muted)', 'stroke-width':1.5 }, svg);
+    const t = el('text', { x:tx, y:ty, fill:'var(--muted)', 'font-size':11, 'text-anchor':'middle', 'dominant-baseline':'middle' }, svg);
+    t.textContent = d + '°';
+  }
+  // home switch at 180 deg
+  el('rect', { x:53, y:230, width:14, height:18, rx:3, fill:'var(--target)' }, svg);
+  const hs = el('text', { x:60, y:262, fill:'var(--muted)', 'font-size':10.5, 'text-anchor':'middle' }, svg);
+  hs.textContent = 'home switch';
+  armEls.tline = el('line', { stroke:'var(--target)', 'stroke-width':3, 'stroke-dasharray':'6 5', 'stroke-linecap':'round', opacity:.9 }, svg);
+  armEls.tdot = el('circle', { r:6, fill:'var(--target)' }, svg);
+  armEls.arm = el('line', { stroke:'var(--arm)', 'stroke-width':14, 'stroke-linecap':'round' }, svg);
+  armEls.load = el('circle', { r:17, fill:'var(--accent)' }, svg);
+  armEls.ltxt = el('text', { fill:'var(--accent-ink)', 'font-size':11, 'font-weight':700, 'text-anchor':'middle', 'dominant-baseline':'middle' }, svg);
+  armEls.ltxt.textContent = '1 kg';
+  el('circle', { cx:CX, cy:CY, r:15, fill:'var(--card)', stroke:'var(--arm)', 'stroke-width':4 }, svg);
+  armEls.txt = el('text', { x:CX, y:CY + 38, fill:'var(--ink)', 'font-size':20, 'font-weight':650, 'text-anchor':'middle' }, svg);
+  const len = el('text', { x:CX + 66, y:CY + 22, fill:'var(--muted)', 'font-size':10.5, 'text-anchor':'middle' }, svg);
+  len.textContent = 'arm 100 mm';
+  drawArm(90, 90);
+}
+function drawArm(a, tgt){
+  const [x2, y2] = pt(a, R * 0.86);
+  armEls.arm.setAttribute('x1', CX); armEls.arm.setAttribute('y1', CY);
+  armEls.arm.setAttribute('x2', x2); armEls.arm.setAttribute('y2', y2);
+  armEls.load.setAttribute('cx', x2); armEls.load.setAttribute('cy', y2);
+  armEls.ltxt.setAttribute('x', x2); armEls.ltxt.setAttribute('y', y2);
+  const [tx, ty] = pt(tgt, R * 0.86), [dx, dy] = pt(tgt, R);
+  armEls.tline.setAttribute('x1', CX); armEls.tline.setAttribute('y1', CY);
+  armEls.tline.setAttribute('x2', tx); armEls.tline.setAttribute('y2', ty);
+  armEls.tdot.setAttribute('cx', dx); armEls.tdot.setAttribute('cy', dy);
+  armEls.txt.textContent = f1(a) + '°';
+}
+
+/* ---------------------------------------------------------------- charts */
+function lowerBound(arr, t){ let lo = 0, hi = arr.length; while (lo < hi){ const m = (lo + hi) >> 1; if (arr[m].t < t) lo = m + 1; else hi = m; } return lo; }
+function niceStep(range, n){ const raw = range / n, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p; return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p; }
+function ticks(lo, hi, n){ const st = niceStep(hi - lo, n), out = []; for (let v = Math.ceil(lo / st - 1e-9) * st; v <= hi + 1e-9; v += st) out.push(+v.toFixed(6)); return out; }
+const fmtTick = v => Number.isInteger(v) ? String(v) : v.toFixed(1);
+const layout = {};
+
+function drawChart(cv, cfg){
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)){ cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim();
+  const m = { l:50, r: cfg.right ? 50 : 14, t:12, b:26 };
+  const pw = w - m.l - m.r, ph = h - m.t - m.b;
+  const X = t => m.l + (t - cfg.t0) / (cfg.t1 - cfg.t0) * pw;
+  const mk = ax => v => m.t + (1 - (v - ax.min) / (ax.max - ax.min)) * ph;
+  const YL = mk(cfg.left), YR = cfg.right ? mk(cfg.right) : null;
+  layout[cv.id] = { m, pw, t0:cfg.t0, t1:cfg.t1 };
+
+  ctx.font = '11px system-ui, sans-serif'; ctx.lineWidth = 1;
+  for (const v of ticks(cfg.left.min, cfg.left.max, 5)){
+    const y = Math.round(YL(v)) + .5;
+    ctx.strokeStyle = v === 0 && cfg.zeroLine ? col('--muted') : col('--grid');
+    ctx.beginPath(); ctx.moveTo(m.l, y); ctx.lineTo(m.l + pw, y); ctx.stroke();
+    ctx.fillStyle = cfg.left.color || col('--muted'); ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillText(fmtTick(v), m.l - 6, y);
+  }
+  if (cfg.right) for (const v of ticks(cfg.right.min, cfg.right.max, 4)){
+    ctx.fillStyle = cfg.right.color || col('--muted'); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(fmtTick(v), m.l + pw + 6, YR(v));
+  }
+  for (const v of ticks(cfg.t0, cfg.t1, 6)){
+    const x = Math.round(X(v)) + .5;
+    ctx.strokeStyle = col('--grid'); ctx.beginPath(); ctx.moveTo(x, m.t); ctx.lineTo(x, m.t + ph); ctx.stroke();
+    ctx.fillStyle = col('--muted'); ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(fmtTick(v) + ' s', x, m.t + ph + 6);
+  }
+  ctx.save(); ctx.beginPath(); ctx.rect(m.l, m.t, pw, ph); ctx.clip();
+  for (const b of cfg.bands || []){
+    ctx.globalAlpha = b.alpha || .12; ctx.fillStyle = col(b.color);
+    ctx.fillRect(m.l, YL(b.hi), pw, YL(b.lo) - YL(b.hi)); ctx.globalAlpha = 1;
+  }
+  for (const s of cfg.series){
+    ctx.strokeStyle = col(s.color); ctx.lineWidth = s.width || 2; ctx.setLineDash(s.dash || []); ctx.lineJoin = 'round';
+    const Y = s.axis === 'r' ? YR : YL;
+    ctx.beginPath();
+    s.pts.forEach((p, i) => { const x = X(p.t), y = Y(p.v); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  for (const vl of cfg.vlines || []){
+    ctx.strokeStyle = col('--muted'); ctx.setLineDash([3, 4]); ctx.lineWidth = 1;
+    const x = X(vl.t); ctx.beginPath(); ctx.moveTo(x, m.t); ctx.lineTo(x, m.t + ph); ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.restore();
+  for (const k of cfg.markers || []){
+    const x = X(k.t), y = (k.axis === 'r' ? YR : YL)(k.v);
+    if (x < m.l || x > m.l + pw) continue;
+    ctx.fillStyle = col(k.color); ctx.beginPath(); ctx.arc(x, y, 4.5, 0, 7); ctx.fill();
+    ctx.font = '600 12px system-ui, sans-serif'; ctx.textBaseline = 'bottom';
+    const txt = (w < 480 && k.short) ? k.short : k.label;
+    const right = x + 8 + ctx.measureText(txt).width > m.l + pw; ctx.textAlign = right ? 'right' : 'left';
+    ctx.fillText(txt, x + (right ? -8 : 8), Math.max(y - 6, m.t + 38));
+    ctx.font = '11px system-ui, sans-serif';
+  }
+  if (cfg.hoverT != null && cfg.hoverT >= cfg.t0 && cfg.hoverT <= cfg.t1){
+    const x = X(cfg.hoverT); ctx.strokeStyle = col('--muted'); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, m.t); ctx.lineTo(x, m.t + ph); ctx.stroke();
+  }
+  // legend
+  let lx = m.l + 8; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  for (const lg of cfg.legend){
+    ctx.strokeStyle = col(lg.color); ctx.lineWidth = 2.5; ctx.setLineDash(lg.dash || []);
+    ctx.beginPath(); ctx.moveTo(lx, m.t + 11); ctx.lineTo(lx + 18, m.t + 11); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = col('--ink'); ctx.fillText(lg.label, lx + 23, m.t + 11);
+    lx += 23 + ctx.measureText(lg.label).width + 16;
+  }
+  if (cfg.hoverText){ ctx.fillStyle = col('--ink'); ctx.textAlign = 'right'; ctx.fillText(cfg.hoverText, m.l + pw - 8, w < 560 ? m.t + 28 : m.t + 11); }
+  if (cfg.empty){ ctx.fillStyle = col('--muted'); ctx.textAlign = 'center'; ctx.font = '13px system-ui, sans-serif'; ctx.fillText('Press Connect or Demo to see data', m.l + pw / 2, m.t + ph / 2); }
+}
+
+function drawAll(){
+  const sm = S.samples, last = sm.length ? sm[sm.length - 1] : null;
+  const wv = $('win').value;
+  const win = wv === 'all' ? Math.max(10, last ? last.t : 10) : +wv;
+  const t1 = S.paused ? S.pauseT : Math.max(last ? last.t : 0, win), t0 = t1 - win;
+  const i0 = lowerBound(sm, t0), i1 = lowerBound(sm, t1 + 1e-9);
+  const stride = Math.max(1, Math.floor((i1 - i0) / 1200));
+  const vis = []; for (let i = i0; i < i1; i += stride) vis.push(sm[i]);
+
+  let hs = null;
+  if (S.hoverT != null && sm.length){
+    let j = lowerBound(sm, S.hoverT); if (j >= sm.length) j = sm.length - 1;
+    if (j > 0 && Math.abs(sm[j - 1].t - S.hoverT) < Math.abs(sm[j].t - S.hoverT)) j--;
+    hs = sm[j];
+  }
+  // chart 1: angle and target
+  let lo = 0, hi = 180;
+  if ($('auto').checked && vis.length){
+    lo = Infinity; hi = -Infinity;
+    for (const s of vis){ lo = Math.min(lo, s.angle, s.target); hi = Math.max(hi, s.angle, s.target); }
+    const pad = Math.max(2, (hi - lo) * 0.1); lo -= pad; hi += pad;
+    if (hi - lo < 12){ const c = (hi + lo) / 2; lo = c - 6; hi = c + 6; }
+  } else { lo = -5; hi = 185; }
+  const bands = [], markers = [], vlines = [];
+  if (last){ const B = band(); bands.push({ lo:last.target - B, hi:last.target + B, color:'--target', alpha:.13 }); }
+  if (step){
+    vlines.push({ t:step.t0 });
+    if (step.peakEx > 0.05 && step.peakT >= t0){
+      const pct = step.peakEx / Math.abs(step.T - step.a0) * 100;
+      markers.push({ t:step.peakT, v:step.peakA, color: pct <= 30 ? '--good' : '--bad', label:'overshoot +' + f1(step.peakEx) + '° (' + f1(pct) + '%)', short:'+' + f1(pct) + '%' });
+    }
+  }
+  drawChart($('c1'), {
+    t0, t1, left:{ min:lo, max:hi }, bands, markers, vlines, empty: !sm.length,
+    series:[
+      { pts:vis.map(s => ({ t:s.t, v:s.target })), color:'--target', dash:[6, 4], width:1.8 },
+      { pts:vis.map(s => ({ t:s.t, v:s.angle })), color:'--accent', width:2.4 }
+    ],
+    legend:[{ label:'Angle (°)', color:'--accent' }, { label:'Target (°)', color:'--target', dash:[6, 4] }],
+    hoverT:S.hoverT,
+    hoverText: hs ? 't ' + hs.t.toFixed(1) + ' s · angle ' + f1(hs.angle) + '° · target ' + f1(hs.target) + '° · err ' + f1(hs.target - hs.angle) + '°' : null
+  });
+  // chart 2: speed and PWM
+  let mx = 10; for (const s of vis) mx = Math.max(mx, Math.abs(s.speed));
+  mx = Math.ceil(mx * 1.15 / 5) * 5;
+  drawChart($('c2'), {
+    t0, t1, left:{ min:-mx, max:mx, color:'var(--speed)' }, right:{ min:-100, max:100, color:'var(--pwm)' }, zeroLine:true, empty: !sm.length,
+    series:[
+      { pts:vis.map(s => ({ t:s.t, v:s.pwm })), color:'--pwm', axis:'r', width:1.5 },
+      { pts:vis.map(s => ({ t:s.t, v:s.speed })), color:'--speed', width:2.2 }
+    ],
+    legend:[{ label:'Arm speed (°/s)', color:'--speed' }, { label:'PWM (%)', color:'--pwm' }],
+    hoverT:S.hoverT,
+    hoverText: hs ? 'speed ' + f1(hs.speed) + '°/s · motor ' + f1(Math.abs(hs.speed) * GEAR / 6) + ' rpm · PWM ' + f1(hs.pwm) + '%' : null
+  });
+}
+
+for (const id of ['c1', 'c2']){
+  const cv = $(id);
+  cv.addEventListener('mousemove', e => {
+    const L = layout[id]; if (!L) return;
+    const x = e.clientX - cv.getBoundingClientRect().left;
+    S.hoverT = L.t0 + (x - L.m.l) / L.pw * (L.t1 - L.t0);
+    S.dirty = true;
+  });
+  cv.addEventListener('mouseleave', () => { S.hoverT = null; S.dirty = true; });
+}
+window.addEventListener('resize', () => { S.dirty = true; });
+for (const id of ['win', 'auto', 'band']) $(id).addEventListener('input', () => { S.dirty = true; updateStepPanel(); });
+
+function frame(){
+  const last = S.samples[S.samples.length - 1];
+  if (last && armDisp !== null){
+    armDisp += (last.angle - armDisp) * 0.35;
+    drawArm(armDisp, last.target);
+  }
+  if (S.dirty){ S.dirty = false; drawAll(); }
+  requestAnimationFrame(frame);
+}
+
+/* ---------------------------------------------------------------- buttons */
+function goTo(v){
+  v = Math.max(0, Math.min(180, +v));
+  if (!isFinite(v)) return;
+  $('slider').value = v; $('angleIn').value = v;
+  send(String(v));
+}
+PRESETS.forEach(v => {
+  const b = document.createElement('button');
+  b.className = 'preset'; b.textContent = v + '°'; b.disabled = true;
+  b.onclick = () => goTo(v);
+  $('presets').appendChild(b);
+});
+TUNE.forEach(([k, label]) => {
+  const l = document.createElement('label'); l.textContent = label; l.htmlFor = 't_' + k;
+  const i = document.createElement('input'); i.type = 'number'; i.step = 'any'; i.id = 't_' + k;
+  const b = document.createElement('button'); b.className = 'small tuneSet'; b.textContent = 'Set'; b.disabled = true;
+  b.onclick = () => { if (i.value !== '') send(k + ' ' + i.value); };
+  i.addEventListener('keydown', e => { if (e.key === 'Enter') b.click(); });
+  $('tune').append(l, i, b);
+});
+$('btnHome').onclick = () => { S.homing = true; refreshUi(); send('h'); };
+$('btnHold').onclick = () => send('s');
+$('btnGo').onclick = () => goTo($('angleIn').value);
+$('angleIn').addEventListener('keydown', e => { if (e.key === 'Enter') goTo($('angleIn').value); });
+$('slider').addEventListener('input', () => { $('angleIn').value = $('slider').value; });
+$('slider').addEventListener('change', () => goTo($('slider').value));
+$('btnRead').onclick = () => send('?');
+$('btnBk').onclick = () => send('bk');
+$('btnSend').onclick = () => { send($('rawIn').value); $('rawIn').value = ''; };
+$('rawIn').addEventListener('keydown', e => { if (e.key === 'Enter') $('btnSend').click(); });
+$('btnConnect').onclick = () => { S.connected ? disconnect() : connect(); };
+$('btnPause').onclick = () => {
+  S.paused = !S.paused;
+  if (S.paused){ const l = S.samples[S.samples.length - 1]; S.pauseT = Math.max(l ? l.t : 0, +($('win').value === 'all' ? 10 : $('win').value)); }
+  $('btnPause').textContent = S.paused ? 'Resume' : 'Pause';
+  S.dirty = true;
+};
+$('btnClear').onclick = () => { S.samples = []; S.n = 0; step = null; lastTarget = null; S.paused = false; $('btnPause').textContent = 'Pause'; updateStepPanel(); S.dirty = true; };
+$('btnCsv').onclick = () => {
+  if (!S.samples.length){ showAlert('No data to export yet.', 'info'); return; }
+  const rows = ['t_s,angle_deg,target_deg,error_deg,pwm_pct,boost_pct,speed_deg_s'];
+  for (const s of S.samples) rows.push([s.t.toFixed(1), s.angle, s.target, (s.target - s.angle).toFixed(2), s.pwm, s.boost, s.speed.toFixed(2)].join(','));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([rows.join('\n')], { type:'text/csv' }));
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  a.download = 'servo_log_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()) + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+};
+
+/* ---------------------------------------------------------------- demo (simulated servo, no hardware) */
+const demo = {
+  timer:null, a:90, v:0, target:90, homing:false, homed:false, integ:0, pwm:0, k:0,
+  kp:2, ki:3, kd:0.2, minup:18, mindn:18, ratio:2,
+  start(){
+    this.a = 40 + Math.random() * 80; this.v = 0; this.target = this.a; this.homed = false; this.homing = false; this.integ = 0; this.k = 0;
+    handleLine('boot'); handleLine('not homed - type h');
+    this.timer = setInterval(() => this.tick(), 20);
+  },
+  stop(){ clearInterval(this.timer); this.timer = null; },
+  command(c){
+    const e = t => handleLine(t);
+    if (c === 'h'){ this.homing = true; this.homed = false; e('homing...'); }
+    else if (c === 's'){ this.target = this.a; this.integ = 0; e('hold'); }
+    else if (/^-?[\d.]+$/.test(c)){
+      if (!this.homed) e('type h first (home)');
+      else { this.target = Math.max(0, Math.min(180, +c)); e('target ' + this.target.toFixed(1) + ' deg'); }
+    }
+    else if (/^(kp|ki|kd|minup|mindn|ratio)\s/.test(c)){ const [k, v] = c.split(/\s+/); this[k] = +v; e(k + ' = ' + (+v).toFixed(3)); }
+    else if (c === '?') e('kp ' + this.kp.toFixed(2) + ' | ki ' + this.ki.toFixed(2) + ' | kd ' + this.kd.toFixed(2) + ' | ratio ' + this.ratio.toFixed(3) + ' | minup ' + this.minup.toFixed(1) + ' | mindn ' + this.mindn.toFixed(1) + ' | bmax 25.0 | brate 30.0');
+    else if (c === 'bk') e('breakaway test is not available in demo mode');
+    else e('unknown command');
+  },
+  tick(){
+    const dt = 0.02;
+    if (this.homing){
+      this.a += 14 * dt;
+      if (this.a >= 180){ this.a = 180; this.homing = false; this.homed = true; this.target = 0; this.v = 0; handleLine('homed. angle = 180.0 , going to 0.0'); }
+    } else if (this.homed){
+      const e = this.target - this.a;
+      if (Math.abs(e) < 8) this.integ = Math.max(-40, Math.min(40, this.integ + this.ki * e * dt)); else this.integ = 0;
+      let out = this.kp * e + this.integ - this.kd * this.v;
+      out = Math.max(-100, Math.min(100, out));
+      if (Math.abs(e) > 0.3 && Math.abs(out) < this.minup) out = out >= 0 ? this.minup : -this.minup;
+      this.pwm = out;
+      const drive = Math.abs(out) < 14 && Math.abs(this.v) < 1 ? 0 : out;       // static friction
+      this.v += ((0.4 * drive - this.v) / 0.18) * dt;
+      this.a += this.v * dt;
+      if (this.a > 180){ this.a = 180; this.v = 0; } if (this.a < 0){ this.a = 0; this.v = 0; }
+    }
+    if (++this.k % 5 === 0){
+      if (this.homed) handleLine('angle:' + this.a.toFixed(1) + ',target:' + this.target.toFixed(1) + ',err:' + (this.target - this.a).toFixed(1) + ',pwm:' + this.pwm.toFixed(1) + ',boost:0.0');
+      else if (this.k % 50 === 0 && !this.homing) handleLine('not homed - type h');
+    }
+  }
+};
+$('btnDemo').onclick = () => {
+  if (S.demo){ demo.stop(); S.demo = false; S.homed = false; S.homing = false; refreshUi(); return; }
+  S.demo = true; S.homed = false; S.homing = false; $('alert').hidden = true;
+  demo.start(); refreshUi();
+  showAlert('Demo mode: a simulated servo. Press Home, then pick an angle. Nothing is sent to the board.', 'info');
+};
+
+/* ---------------------------------------------------------------- start */
+buildArm();
+refreshUi();
+updateStepPanel();
+if (!('serial' in navigator)) showAlert('This browser has no Web Serial. Use Chrome or Edge to connect to the board (Demo mode still works).', 'info');
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
